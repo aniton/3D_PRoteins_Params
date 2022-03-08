@@ -1,0 +1,16 @@
+version: "2.4"
+
+services:
+  fcls:
+    build: .
+    shm_size: 64g
+    runtime: nvidia
+    ports:
+      - $JUPYTER_PORT:8888
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=${GPUS:-all}
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID
+      - AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY
+      - WANDB_API_KEY=$WANDB_API_KEY
+    command: jupyter lab --allow-root --no-browser --ip=0.0.0.0 --port=8888
