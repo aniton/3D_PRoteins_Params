@@ -3,8 +3,8 @@
 Execute from the directory you want the repo to be installed:
 
 ```
-git clone https://github.com/aniton/Artistic-Protein-Surface-Visualisation.git
-cd Artistic-Protein-Surface-Visualisation
+git clone https://github.com/aniton/3D_PRoteins_Params.git
+cd 3D_PRoteins_Params
 pip install -e .
 ```
 Stylize from scratch:
