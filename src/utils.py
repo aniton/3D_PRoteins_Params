@@ -4,7 +4,6 @@ from IPython.display import Image
 import xmlrpc.client as xlmrpclib
 
 
-
 def render_image(name):
     img_path = name + ".png"
     cmd = xlmrpclib.ServerProxy("http://localhost:9123/")
