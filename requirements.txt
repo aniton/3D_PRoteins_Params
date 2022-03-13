@@ -1,6 +1,5 @@
-ipymol
-PyMOL
 SSIM_PIL
+pyopencl
 absl-py==1.0.0
 albumentations==1.1.0
 antlr4-python3-runtime==4.8
@@ -129,6 +128,7 @@ Shapely==1.8.0
 shortuuid==1.0.7
 six==1.16.0
 smmap==5.0.0
+SSIM_PIL
 subprocess32==3.5.4
 tabulate==0.8.9
 tensorboard==2.7.0
