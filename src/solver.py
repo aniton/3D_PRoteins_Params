@@ -132,7 +132,7 @@ class PymolTexture:
             optimizer = optim.Adam([generated_image], lr=lr)
         losses = []
         parms = []
-        cmd = xlmrpclib.ServerProxy("http://localhost:9124/")
+        cmd = xlmrpclib.ServerProxy("http://localhost:9123/")
         cmd.fetch(self.protein)
         for paramset in param_values:
             start_time = time.time()
