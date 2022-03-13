@@ -1,26 +1,29 @@
 import time
 import torch
 import torch.nn as nn
+import xmlrpc.client as xlmrpclib
 import torch.optim as optim
 import torchvision.models as models
 import torchvision.transforms as transforms
 from ipymol import viewer as pymol
 import numpy as np
+import cv2
+from SSIM_PIL import compare_ssim
 from PIL import Image
 from itertools import product
-from pymol import cmd
+import argparse
 from torchvision.utils import save_image
 from typing import List, Tuple, TypedDict, Literal, Union, Dict, Optional
 from .style_model import calculate_loss, weights_init_uniform_rule, image_loader, VGG
 from .utils import render_image, merge_two_dicts
 
 COMMON_PARAMS = {
-    "ray_trace_gain": np.arange(0, 20, 5),
+    "ray_trace_gain": np.arange(0, 10, 5),
     "ray_trace_mode": np.arange(0, 3, 1),
 }
 
 SPHERES_TEXT_PARAMS = {
-    "sphere_scale": np.arange(0.1, 1, 0.3),
+    "sphere_scale": np.arange(0.1, 1, 0.4),
     "sphere_transparency": [0, 0.5],
     "sphere_mode": np.arange(0, 8, 1),
     "sphere_solvent": [0, 1],
@@ -91,6 +94,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class PymolTexture:
     def __init__(
         self,
+        compare_method:  Literal['ssim','neural'],
         style: Image,
         protein: str,
         repres: Literal["spheres", "sticks", "lines", "ribbons", "cartoon", "dots"],
@@ -104,13 +108,13 @@ class PymolTexture:
         self.style = style
         self.model = model
         self.repres = repres
-
+        self.method = compare_method
     """
     Arguments:
         style: image of the desired style
         protein: pdb name of the desired protein
         repres: representation
-        texture_params: EXISTING_PARAMS / SPHERES_TEXT_PARAMS / STICKS_TEXT_PARAMS / LINES_TEXT_PARAMS / RIBBONS_TEXT_PARAMS / DOTS_TEXT_PARAMS
+        texture_params: SPHERES_TEXT_PARAMS / STICKS_TEXT_PARAMS / LINES_TEXT_PARAMS / RIBBONS_TEXT_PARAMS / DOTS_TEXT_PARAMS
         common_params: COMMON PARAMS for all representations
         model: style transferring model
     """
@@ -122,10 +126,12 @@ class PymolTexture:
         self.model.apply(weights_init_uniform_rule)
         epoch = 1
         lr = 0.004
-        generated_image = self.style.clone().requires_grad_(True)
-        optimizer = optim.Adam([generated_image], lr=lr)
+        if self.method == 'neural':
+            generated_image = self.style.clone().requires_grad_(True)
+            optimizer = optim.Adam([generated_image], lr=lr)
         losses = []
         parms = []
+        cmd = xlmrpclib.ServerProxy("http://localhost:9123/")
         cmd.fetch(self.protein)
         for paramset in param_values:
             start_time = time.time()
@@ -233,30 +239,55 @@ class PymolTexture:
                         ray 256, 256
                         """
                 )
-            render_image("styled")
-            styled = image_loader("styled.png")
-            for e in range(epoch):
-                gen_features = self.model(generated_image)
-                orig_feautes = self.model(styled)
-                style_featues = self.model(self.style)
-                total_loss = calculate_loss(gen_features, orig_feautes, style_featues)
-                optimizer.zero_grad()
-                total_loss.backward()
-                optimizer.step()
-                losses.append(total_loss)
-                parms.append(kwargs)
-                print("--- %s seconds ---" % (time.time() - start_time))
-        return parms[argmin(losses)]
+            #render_image('styled')
+            cmd.png('styled.png')
+            time.sleep(1)
+            if self.method == 'neural':
+                styled = image_loader("styled.png")
+                for e in range(epoch):
+                    gen_features = self.model(generated_image)
+                    orig_feautes = self.model(styled)
+                    style_featues = self.model(self.style)
+                    total_loss = calculate_loss(gen_features, orig_feautes, style_featues)
+                    optimizer.zero_grad()
+                    total_loss.backward()
+                    optimizer.step()
+                    losses.append(total_loss)
+                    parms.append(kwargs)
+                    print("--- %s seconds ---" % (time.time() - start_time))
+            elif self.method == 'ssim':
+                styled = cv2.imread("styled.png")
+                resized = cv2.resize(styled, (style.shape[1],style.shape[0]), interpolation = cv2.INTER_AREA)
+                ssim = compare_ssim(Image.fromarray(style), Image.fromarray(resized))
+                losses.append(ssim)
+        return parms[np.argmin(losses)]
 
 
 if __name__ == "__main__":
-    style = image_loader("st.png")
-    model = PymolTexture(
-        style=style,
-        protein="1lmp",
-        repres="dots",
-        texture_params=DOTS_TEXT_PARAMS,
-        common_params=COMMON_PARAMS,
-        model=VGG().to(DEVICE).eval(),
-    )
-    k = model.run()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--compare_method', dest='compare_method', type=str)
+    args = parser.parse_args()
+    if args.compare_method == 'neural':
+        style = image_loader("st.png")
+        model = PymolTexture(
+            compare_method = 'neural',
+            style=style,
+            protein="1lmp",
+            repres="dots",
+            texture_params=DOTS_TEXT_PARAMS,
+            common_params=COMMON_PARAMS,
+            model=VGG().to(DEVICE).eval(),
+        )
+        k = model.run()
+    elif args.compare_method == 'ssim':
+        style = cv2.imread("st.png")
+        model = PymolTexture(
+            compare_method = 'ssim', 
+            style=style,
+            protein="1lmp",
+            repres="dots",
+            texture_params=DOTS_TEXT_PARAMS,
+            common_params=COMMON_PARAMS,
+            model=VGG().to(DEVICE).eval(),
+        )
+        k = model.run()
