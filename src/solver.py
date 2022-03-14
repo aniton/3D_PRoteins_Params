@@ -275,22 +275,22 @@ if __name__ == "__main__":
     parser.add_argument("--compare_method", dest="compare_method", type=str)
     args = parser.parse_args()
     if args.compare_method == "neural":
-        style = image_loader("sty.png")
+        style = image_loader("st.png")
         model = PymolTexture(
             compare_method="neural",
             style=style,
-            protein="1bp2",
+            protein="1cjy",
             repres="dots",
             texture_params=DOTS_TEXT_PARAMS,
             common_params=COMMON_PARAMS,
             model=VGG().to(DEVICE).eval(),
         )
     elif args.compare_method == "ssim":
-        style = cv2.imread("sty.png")
+        style = cv2.imread("st.png")
         model = PymolTexture(
             compare_method="ssim",
             style=style,
-            protein="1bp2",
+            protein="1cjy",
             repres="dots",
             texture_params=DOTS_TEXT_PARAMS,
             common_params=COMMON_PARAMS,
