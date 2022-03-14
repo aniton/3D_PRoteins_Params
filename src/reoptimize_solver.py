@@ -330,21 +330,21 @@ if __name__ == "__main__":
         "ray_trace_mode": [1],
     }
     if args.compare_method == "neural":
-        style = image_loader("sty.png")
+        style = image_loader("st.png")
         model = PymolTexture_opt(
             compare_method="neural",
             style=style,
-            protein="1bp2",
+            protein="1cjy",
             repres="lines",
             params=PARAMS,
             model=VGG().to(DEVICE).eval(),
         )
     if args.compare_method == "ssim":
-        style = cv2.imread("sty.png")
+        style = cv2.imread("st.png")
         model = PymolTexture_opt(
             compare_method="ssim",
             style=style,
-            protein="1bp2",
+            protein="1cjy",
             repres="lines",
             params=PARAMS,
             model=VGG().to(DEVICE).eval(),
