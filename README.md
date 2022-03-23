@@ -15,5 +15,4 @@ python3 -m src.solver --solver solver  --compare_method ['ssim', 'neural'] --pro
 Opimize existing parameters:
 
 ```
-python3 -m src.solver --solver optimizer  --compare_method ['ssim', 'neural'] --protein 1lmp --representation lines  --style_image_path st.png
-```
+python3 -m src.solver --solver optimizer  --compare_method ['ssim', 'neural'] --protein 1lmp --representation lines  --style_image_path st.png```
