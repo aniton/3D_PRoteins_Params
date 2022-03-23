@@ -1,5 +1,6 @@
 import time
 import torch
+import os
 import torch.nn as nn
 import xmlrpc.client as xlmrpclib
 import torch.optim as optim
@@ -15,7 +16,7 @@ import argparse
 from torchvision.utils import save_image
 from typing import List, Tuple, TypedDict, Literal, Union, Dict, Optional
 from .style_model import calculate_loss, weights_init_uniform_rule, image_loader, VGG
-from .utils import render_image, merge_two_dicts
+from .utils import render_image, merge_two_dicts, split_dict
 
 COMMON_PARAMS = {
     "ray_trace_gain": np.arange(0, 10, 5),
@@ -94,34 +95,166 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 class PymolTexture:
     def __init__(
         self,
-        compare_method: Literal["ssim", "neural"],
+        solver: str,
+        params: Dict,
+        model: nn.Module,
         style: Image,
         protein: str,
+        compare_method: Literal["ssim", "neural"],
         repres: Literal["spheres", "sticks", "lines", "ribbons", "cartoon", "dots"],
-        texture_params: Dict,
-        common_params: Dict,
-        model: nn.Module,
+        view: Optional[Tuple[float, ...]] = None,
     ) -> None:
-        self.texture_params = texture_params
-        self.common_params = common_params
+        self.params = params
         self.protein = protein
         self.style = style
         self.model = model
         self.repres = repres
         self.method = compare_method
+        self.view = view
+        self.solver = solver
 
     """
     Arguments:
         style: image of the desired style
         protein: pdb name of the desired protein
         repres: representation
-        texture_params: SPHERES_TEXT_PARAMS / STICKS_TEXT_PARAMS / LINES_TEXT_PARAMS / RIBBONS_TEXT_PARAMS / DOTS_TEXT_PARAMS
+        params: EXISTING PARAMS / SPHERES_TEXT_PARAMS / STICKS_TEXT_PARAMS / LINES_TEXT_PARAMS / RIBBONS_TEXT_PARAMS / DOTS_TEXT_PARAMS
         common_params: COMMON PARAMS for all representations
         model: style transferring model
     """
 
     def run(self):
-        z = merge_two_dicts(self.texture_params, self.common_params)
+        if self.solver == "optimizer":
+            text_params, common_params = split_dict(self.params)
+            if self.repres == "spheres":
+                texture_params = {
+                    "sphere_scale": np.arange(
+                        text_params["sphere_scale"] - 0.1,
+                        text_params["sphere_scale"] + 0.4,
+                        0.1,
+                    ),
+                    "sphere_transparency": [text_params["sphere_transparency"]],
+                    "sphere_mode": [text_params["sphere_mode"]],
+                    "sphere_solvent": [text_params["sphere_solvent"]],
+                    "cull_spheres": [text_params["cull_spheres"]],
+                }
+            if self.repres == "sticks":
+                texture_params = {
+                    "stick_radius": np.arange(
+                        text_params["stick_radius"] - 0.1,
+                        text_params["stick_radius"] + 0.4,
+                        0.1,
+                    ),
+                    "stick_fixed_radius": [text_params["stick_fixed_radius"]],
+                    "stick_nub": [text_params["stick_nub"]],
+                    "stick_transparency": np.arange(
+                        text_params["stick_transparency"] - 0.1,
+                        text_params["stick_transparency"] + 0.3,
+                        0.1,
+                    ),
+                }
+            if self.repres == "lines":
+                texture_params = {
+                    "dynamic_width": [text_params["dynamic_width"]],
+                    "dynamic_width_max": [text_params["dynamic_width_max"]],
+                    "dynamic_width_min": [text_params["dynamic_width_min"]],
+                    "dynamic_width_factor": np.arange(
+                        text_params["dynamic_width_factor"] - 0.1,
+                        text_params["dynamic_width_factor"] + 0.4,
+                        0.1,
+                    ),
+                    "line_radius": np.arange(
+                        text_params["line_radius"] - 0.1,
+                        text_params["line_radius"] + 0.4,
+                        0.1,
+                    ),
+                    "line_smooth": [text_params["line_smooth"]],
+                    "line_width": [text_params["line_width"]],
+                }
+            if self.repres == "ribbons":
+                texture_params = {
+                    "ribbon_nucleic_acid_mode": [
+                        text_params["ribbon_nucleic_acid_mode"]
+                    ],
+                    "ribbon_power": np.arange(
+                        text_params["ribbon_power"] - 1,
+                        text_params["ribbon_power"] + 3,
+                        1,
+                    ),
+                    "ribbon_power_b": np.arange(
+                        text_params["ribbon_power_b"] - 0.1,
+                        text_params["ribbon_power_b"] + 0.4,
+                        0.1,
+                    ),
+                    "ribbon_radius": np.arange(
+                        text_params["ribbon_radius"] - 0.1,
+                        text_params["ribbon_radius"] + 0.3,
+                        0.1,
+                    ),
+                    "ribbon_sampling": np.arange(
+                        text_params["ribbon_power"] - 1,
+                        text_params["ribbon_power"] + 3,
+                        1,
+                    ),
+                    "ribbon_side_chain_helper": [
+                        text_params["ribbon_side_chain_helper"]
+                    ],
+                    "ribbon_throw": [text_params["ribbon_throw"]],
+                    "ribbon_trace_atoms": [text_params["ribbon_trace_atoms"]],
+                    "ribbon_width": np.arange(
+                        text_params["ribbon_width"] - 1,
+                        text_params["ribbon_width"] + 3,
+                        1,
+                    ),
+                    "trace_atoms_mode": [text_params["trace_atoms_mode"]],
+                }
+            if self.repres == "cartoon":
+                texture_params = {
+                    "cartoon_cylindrical_helices": [
+                        text_params["cartoon_cylindrical_helices"]
+                    ],
+                    "cartoon_debug": [text_params["cartoon_debug"]],
+                    "cartoon_dumbbell_length": np.arange(
+                        text_params["cartoon_dumbbell_length"] - 1,
+                        text_params["cartoon_dumbbell_length"] + 3,
+                        1,
+                    ),
+                    "cartoon_dumbbell_radius": [text_params["cartoon_dumbbell_radius"]],
+                    "cartoon_dumbbell_width": [text_params["cartoon_dumbbell_width"]],
+                    "cartoon_fancy_helices": [text_params["cartoon_fancy_helices"]],
+                    "cartoon_fancy_sheets": [text_params["cartoon_fancy_sheets"]],
+                    "cartoon_flat_sheets": [text_params["cartoon_flat_sheets"]],
+                    "cartoon_loop_cap": [text_params["cartoon_loop_cap"]],
+                    "cartoon_nucleic_acid_mode": [
+                        text_params["cartoon_nucleic_acid_mode"]
+                    ],
+                    "cartoon_oval_quality": np.arange(
+                        text_params["cartoon_oval_quality"] - 1,
+                        text_params["cartoon_oval_quality"] + 3,
+                        1,
+                    ),
+                    "cartoon_ring_finder": [text_params["cartoon_ring_finder"]],
+                    "cartoon_smooth_cycles": [text_params["cartoon_smooth_cycles"]],
+                    "cartoon_transparency": [text_params["cartoon_transparency"]],
+                    "cartoon_tube_cap": [text_params["cartoon_tube_cap"]],
+                }
+            if self.repres == "dots":
+                texture_params = {
+                    "dot_density": [text_params["dot_density"]],
+                    "dot_hydrogens": [text_params["dot_hydrogens"]],
+                    "dot_lighting": [text_params["dot_lighting"]],
+                    "dot_normals": [text_params["dot_normals"]],
+                    "dot_radius": np.arange(
+                        text_params["dot_radius"] - 0.1,
+                        text_params["dot_radius"] + 0.3,
+                        0.1,
+                    ),
+                    "dot_solvent": [text_params["dot_solvent"]],
+                    "trim_dots": [text_params["trim_dots"]],
+                }
+            z = merge_two_dicts(texture_params, common_params)
+        elif self.solver == "optimizer":
+            z = self.params
         param_names = list(z.keys())
         param_values = (zip(param_names, x) for x in product(*z.values()))
         self.model.apply(weights_init_uniform_rule)
@@ -133,7 +266,11 @@ class PymolTexture:
         losses = []
         parms = []
         cmd = xlmrpclib.ServerProxy("http://localhost:9123/")
-        cmd.fetch(self.protein)
+        if os.path.exists(self.protein + ".pdb") and self.view:
+            cmd.load(self.protein + ".pdb")
+            cmd.set_view(self.view)
+        else:
+            cmd.fetch(self.protein)
         for paramset in param_values:
             start_time = time.time()
             kwargs = dict(paramset)
@@ -267,33 +404,64 @@ class PymolTexture:
                 )
                 ssim = compare_ssim(Image.fromarray(style), Image.fromarray(resized))
                 losses.append(ssim)
+                parms.append(kwargs)
         return parms[np.argmin(losses)]
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    parser.add_argument("--solver", dest="solver", type=str)
     parser.add_argument("--compare_method", dest="compare_method", type=str)
+    parser.add_argument("--protein", dest="protein", type=str)
+    parser.add_argument("--representation", dest="representation", type=str)
+    parser.add_argument("--style_image_path", dest="style_image_path", type=str)
     args = parser.parse_args()
+    if args.solver == "optimizer":
+        params = PARAMS = {
+            "dynamic_width": 1,
+            "dynamic_width_max": 5,
+            "dynamic_width_min": 2.5,
+            "dynamic_width_factor": 0.4,
+            "line_radius": 1,
+            "line_smooth": 1,
+            "line_width": 2,
+            "ray_trace_gain": [5],
+            "ray_trace_mode": [1],
+        }
+    elif args.solver == "solver":
+        if args.representation == "dots":
+            params = merge_two_dicts(DOTS_TEXT_PARAMS, COMMON_PARAMS)
+        elif args.representation == "spheres":
+            params = merge_two_dicts(SPHERES_TEXT_PARAMS, COMMON_PARAMS)
+        elif args.representation == "sticks":
+            params = merge_two_dicts(STICKS_TEXT_PARAMS, COMMON_PARAMS)
+        elif args.representation == "lines":
+            params = merge_two_dicts(LINES_TEXT_PARAMS, COMMON_PARAMS)
+        elif args.representation == "ribbons":
+            params = merge_two_dicts(RIBBONS_TEXT_PARAMS, COMMON_PARAMS)
+        elif args.representation == "cartoon":
+            params = merge_two_dicts(CARTOON_TEXT_PARAMS, COMMON_PARAMS)
     if args.compare_method == "neural":
-        style = image_loader("st.png")
+        style = image_loader(args.style_image_path)
         model = PymolTexture(
+            solver=args.solver,
             compare_method="neural",
             style=style,
-            protein="1cjy",
-            repres="dots",
-            texture_params=DOTS_TEXT_PARAMS,
-            common_params=COMMON_PARAMS,
+            protein=args.protein,
+            repres=args.representation,
+            params=params,
             model=VGG().to(DEVICE).eval(),
         )
     elif args.compare_method == "ssim":
-        style = cv2.imread("st.png")
+        style = cv2.imread(args.style_image_path)
         model = PymolTexture(
+            solver=args.solver,
             compare_method="ssim",
             style=style,
-            protein="1cjy",
-            repres="dots",
-            texture_params=DOTS_TEXT_PARAMS,
-            common_params=COMMON_PARAMS,
+            protein=args.protein,
+            repres=args.representation,
+            params=params,
             model=VGG().to(DEVICE).eval(),
         )
     k = model.run()
+    print(k)
