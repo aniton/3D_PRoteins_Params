@@ -11,10 +11,9 @@ pymol -R
 Stylize from scratch:
 
 ```
-python3 -m src.solver --compare_method ['ssim', 'neural']
-```
+python3 -m src.solver --solver solver  --compare_method ['ssim', 'neural'] --protein 1lmp --representation lines  --style_image_path st.png```
 Opimize existing parameters:
 
 ```
-python3 -m src.reoptimize_solver --compare_method ['ssim', 'neural']
+python3 -m src.solver --solver optimizer  --compare_method ['ssim', 'neural'] --protein 1lmp --representation lines  --style_image_path st.png
 ```
