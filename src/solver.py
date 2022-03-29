@@ -253,7 +253,7 @@ class PymolTexture:
                     "trim_dots": [text_params["trim_dots"]],
                 }
             z = merge_two_dicts(texture_params, common_params)
-        elif self.solver == "optimizer":
+        elif self.solver == "solver":
             z = self.params
         param_names = list(z.keys())
         param_values = (zip(param_names, x) for x in product(*z.values()))
