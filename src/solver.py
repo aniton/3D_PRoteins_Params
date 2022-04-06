@@ -417,7 +417,7 @@ if __name__ == "__main__":
     parser.add_argument("--style_image_path", dest="style_image_path", type=str)
     args = parser.parse_args()
     if args.solver == "optimizer":
-        params = PARAMS = {
+        params  = {
             "dynamic_width": 1,
             "dynamic_width_max": 5,
             "dynamic_width_min": 2.5,
