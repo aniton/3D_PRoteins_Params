@@ -20,7 +20,7 @@ Opimize existing parameters:
 python3 -m src.solver --solver optimizer  --compare_method ['ssim', 'neural'] --protein 1lmp --representation lines  --style_image_path st.png
 ```
 
-Try autoretrain with optimizer:
+Try autoretrain with texture optimizer and color solver:
 
 ```
 ./src/autoretrain.sh
