@@ -1,0 +1,1 @@
+{'dynamic_width': 1, 'dynamic_width_max': 5, 'dynamic_width_min': 2.5, 'dynamic_width_factor': 0.7, 'line_radius': 1.2999999999999998, 'line_smooth': 1, 'line_width': 2, 'ray_trace_gain': 5, 'ray_trace_mode': 1}
