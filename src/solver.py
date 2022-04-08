@@ -15,8 +15,8 @@ from itertools import product
 import argparse
 from torchvision.utils import save_image
 from typing import List, Tuple, TypedDict, Literal, Union, Dict, Optional
-from .style_model import calculate_loss, weights_init_uniform_rule, image_loader, VGG
-from .utils import render_image, merge_two_dicts, split_dict
+from style_model import calculate_loss, weights_init_uniform_rule, image_loader, VGG
+from utils import render_image, merge_two_dicts, split_dict
 
 COMMON_PARAMS = {
     "ray_trace_gain": np.arange(0, 10, 5),
@@ -417,7 +417,7 @@ if __name__ == "__main__":
     parser.add_argument("--style_image_path", dest="style_image_path", type=str)
     args = parser.parse_args()
     if args.solver == "optimizer":
-        params  = {
+        params = PARAMS = {
             "dynamic_width": 1,
             "dynamic_width_max": 5,
             "dynamic_width_min": 2.5,
@@ -464,4 +464,5 @@ if __name__ == "__main__":
             model=VGG().to(DEVICE).eval(),
         )
     k = model.run()
-    print(k)
+    with open('texture_solver_params.txt', 'w') as f:
+        print(k, file=f)
