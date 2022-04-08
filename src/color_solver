@@ -1,0 +1,127 @@
+import time
+import torch
+import os
+import torch.nn as nn
+import xmlrpc.client as xlmrpclib
+import torch.optim as optim
+import torchvision.models as models
+import torchvision.transforms as transforms
+from ipymol import viewer as pymol
+import numpy as np
+import cv2
+from SSIM_PIL import compare_ssim
+from PIL import Image
+from itertools import product
+import argparse
+from torchvision.utils import save_image
+from typing import List, Tuple, TypedDict, Literal, Union, Dict, Optional
+from .style_model import calculate_loss, weights_init_uniform_rule, image_loader, VGG
+from .utils import render_image, merge_two_dicts, split_dict
+import ast 
+
+
+
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+COLOR_PARAMS = {
+    "R_lig": np.linspace(1,255,num=20,dtype="int"),
+    "G_lig": np.linspace(1,255,num=20,dtype="int"),
+    "B_lig": np.linspace(1,255,num=20,dtype="int"),
+    "R_prot": np.linspace(1,255,num=20,dtype="int"),
+    "G_prot": np.linspace(1,255,num=20,dtype="int"),
+    "B_prot": np.linspace(1,255,num=20,dtype="int")
+}
+
+class PymolColor:
+    def __init__(
+        self,
+        params: Dict,
+        style: Image,
+        protein: str,
+        repres: Literal["spheres", "sticks", "lines", "ribbons", "cartoon", "dots"],
+        view: Optional[Tuple[float, ...]] = None,
+    ) -> None:
+        self.params = params
+        self.style = style
+        self.protein = protein
+        self.repres = repres
+        self.view = view
+    """
+    Arguments:
+        style: image of the desired style
+        protein: pdb name of the desired protein
+        repres: representation
+        params: TEXTURE PARAMS 
+    """
+    def run(self):
+        cmd = xlmrpclib.ServerProxy("http://localhost:9123/")
+        metrics = []
+        parms =[]
+        if os.path.exists(self.protein + ".pdb") and self.view:
+            cmd.load(self.protein + ".pdb")
+            cmd.set_view(self.view)
+        else:
+            cmd.fetch(self.protein)
+        cmd.do(
+                f"""    
+                bg_color white
+                set ray_trace_color, black
+                as {self.repres}
+                """)
+        if self.repres == "spheres":
+                cmd.do(
+                f"""    
+                remove solvent
+                unset specular
+                """)
+        for k, v in self.params.items():
+                cmd.do(
+                f"""    
+                set {k}, {v}
+                """)
+        z = COLOR_PARAMS
+        param_names = list(z.keys())
+        param_values = (zip(param_names, x) for x in product(*z.values()))
+        for paramset in param_values:
+            start_time = time.time()
+            kwargs = dict(paramset)
+            cmd.do(
+                f"""                   
+                set_color lig, [{kwargs["R_lig"]},{kwargs["G_lig"]},{kwargs["B_lig"]}]
+                set_color prot, [{kwargs["R_prot"]},{kwargs["G_prot"]},{kwargs["B_prot"]}] 
+                color lig, org
+                color prot, not org   
+                ray 256, 256                            
+                """
+            )           
+            cmd.png("styled.png")
+            time.sleep(1)
+            styled = cv2.imread('styled.png')
+            styled_hist = cv2.calcHist([cv2.cvtColor(styled, cv2.COLOR_BGR2GRAY)], [0],
+                         None, [256], [0, 256])
+            style_hist = cv2.calcHist([ cv2.cvtColor(self.style, cv2.COLOR_BGR2GRAY)], [0],
+                         None, [256], [0, 256])
+            metric_val = cv2.compareHist(styled_hist, style_hist, cv2.HISTCMP_CORREL)
+            metrics.append(metric_val)
+            parms.append(kwargs)
+        return parms[np.argmax(metrics)]
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--protein", dest="protein", type=str)
+    parser.add_argument("--representation", dest="representation", type=str)
+    parser.add_argument("--style_image_path", dest="style_image_path", type=str)
+    parser.add_argument("--params_txt", dest="params_txt", type=str)
+    args = parser.parse_args()
+    style = cv2.imread(args.style_image_path)
+    file = open(args.params_txt, "r")
+    contents = file.read()
+    params = ast.literal_eval(contents)
+    model = PymolColor(
+            style=style,
+            protein=args.protein,
+            repres=args.representation,
+            params=params)
+    k = model.run()
+    print(k)
