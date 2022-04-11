@@ -415,6 +415,8 @@ if __name__ == "__main__":
     parser.add_argument("--protein", dest="protein", type=str)
     parser.add_argument("--representation", dest="representation", type=str)
     parser.add_argument("--style_image_path", dest="style_image_path", type=str)
+    parser.add_argument("--view", dest="view", type=str)
+
     args = parser.parse_args()
     if args.solver == "optimizer":
         params = PARAMS = {
@@ -451,6 +453,7 @@ if __name__ == "__main__":
             repres=args.representation,
             params=params,
             model=VGG().to(DEVICE).eval(),
+            view = args.view
         )
     elif args.compare_method == "ssim":
         style = cv2.imread(args.style_image_path)
@@ -462,6 +465,7 @@ if __name__ == "__main__":
             repres=args.representation,
             params=params,
             model=VGG().to(DEVICE).eval(),
+            view = args.view
         )
     k = model.run()
     with open('texture_solver_params.txt', 'w') as f:
