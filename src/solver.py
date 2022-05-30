@@ -1,13 +1,17 @@
 import time
 import torch
 import os
+import ast
 import torch.nn as nn
+from PIL import ImageColor
+
 import xmlrpc.client as xlmrpclib
 import torch.optim as optim
 import torchvision.models as models
 import torchvision.transforms as transforms
 from ipymol import viewer as pymol
 import numpy as np
+import json
 import cv2
 from SSIM_PIL import compare_ssim
 from PIL import Image
@@ -17,6 +21,9 @@ from torchvision.utils import save_image
 from typing import List, Tuple, TypedDict, Literal, Union, Dict, Optional
 from style_model import calculate_loss, weights_init_uniform_rule, image_loader, VGG
 from utils import render_image, merge_two_dicts, split_dict
+from collections import Counter
+from sklearn.cluster import KMeans
+from matplotlib import colors
 
 COMMON_PARAMS = {
     "ray_trace_gain": np.arange(0, 10, 5),
@@ -29,6 +36,12 @@ SPHERES_TEXT_PARAMS = {
     "sphere_mode": np.arange(0, 8, 1),
     "sphere_solvent": [0, 1],
     "cull_spheres": [1, 5, 10],
+    "sphere_point_max_size": 10,
+    "sphere_point_size": 1,
+    "sphere_quality": 1,
+    "sphere_scale ": 1,
+    "nb_spheres_quality": 1,
+    "nb_spheres_size": 0.25,
 }
 
 STICKS_TEXT_PARAMS = {
@@ -36,6 +49,12 @@ STICKS_TEXT_PARAMS = {
     "stick_fixed_radius": [0, 1],
     "stick_nub": [0.1, 0.5],
     "stick_transparency": [0, 0.5],
+    "stick_ball": 0,
+    "stick_ball_ratio": 1,
+    "stick_color": -1,
+    "stick_overlap": 0.2,
+    "stick_quality": 8,
+    "stick_valence_scale ": 1,
 }
 
 LINES_TEXT_PARAMS = {
@@ -46,6 +65,7 @@ LINES_TEXT_PARAMS = {
     "line_radius": [0.5, 1],
     "line_smooth": [0, 1],
     "line_width": [1, 2, 5],
+    "line_stick_helper": 1,
 }
 
 RIBBONS_TEXT_PARAMS = {
@@ -92,22 +112,54 @@ DOTS_TEXT_PARAMS = {
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def rgb_to_hex(rgb_color):
+    hex_color = "#"
+    for i in rgb_color:
+        i = int(i)
+        hex_color += "{:02x}".format(i)
+    return hex_color
+
+
+def prep_image(raw_img):
+    modified_img = cv2.resize(raw_img, (900, 600), interpolation=cv2.INTER_AREA)
+    modified_img = modified_img.reshape(
+        modified_img.shape[0] * modified_img.shape[1], 3
+    )
+    return modified_img
+
+
+def color_analysis(img):
+    clf = KMeans(n_clusters=2)
+    color_labels = clf.fit_predict(img)
+    center_colors = clf.cluster_centers_
+    counts = Counter(color_labels)
+    ordered_colors = [center_colors[i] for i in counts.keys()]
+    hex_colors = [rgb_to_hex(ordered_colors[i]) for i in counts.keys()]
+    return hex_colors
+
+
 class PymolTexture:
     def __init__(
         self,
         solver: str,
         params: Dict,
         model: nn.Module,
+        color_1: Tuple[int, int, int],
+        color_2: Tuple[int, int, int],
         style: Image,
         protein: str,
+        cartoon_geis_mode: bool,
         compare_method: Literal["ssim", "neural"],
         repres: Literal["spheres", "sticks", "lines", "ribbons", "cartoon", "dots"],
         view: Optional[Tuple[float, ...]] = None,
     ) -> None:
         self.params = params
         self.protein = protein
+        self.cartoon_geis_mode = cartoon_geis_mode
         self.style = style
         self.model = model
+        self.color_1 = color_1
+        self.color_2 = color_2
         self.repres = repres
         self.method = compare_method
         self.view = view
@@ -133,10 +185,15 @@ class PymolTexture:
                         text_params["sphere_scale"] + 0.4,
                         0.1,
                     ),
-                    "sphere_transparency": [text_params["sphere_transparency"]],
+                    "sphere_transparency": np.arange(
+                        text_params["sphere_transparency"],
+                        text_params["sphere_transparency"] + 5,
+                        1,
+                    ),
                     "sphere_mode": [text_params["sphere_mode"]],
                     "sphere_solvent": [text_params["sphere_solvent"]],
                     "cull_spheres": [text_params["cull_spheres"]],
+                    "ambient": [text_params["ambient"]],
                 }
             if self.repres == "sticks":
                 texture_params = {
@@ -152,6 +209,12 @@ class PymolTexture:
                         text_params["stick_transparency"] + 0.3,
                         0.1,
                     ),
+                    "stick_ball": [text_params["stick_ball"]],
+                    "stick_ball_ratio": [text_params["stick_ball_ratio"]],
+                    "stick_color": [text_params["stick_color"]],
+                    "stick_overlap": [text_params["stick_overlap"]],
+                    "stick_quality": [text_params["stick_quality"]],
+                    "stick_valence_scale ": [text_params["stick_valence_scale"]],
                 }
             if self.repres == "lines":
                 texture_params = {
@@ -291,6 +354,12 @@ class PymolTexture:
                         set sphere_scale, {kwargs['sphere_scale']}
                         set sphere_transparency, {kwargs['sphere_transparency']}
                         set sphere_mode, {kwargs['sphere_mode']}
+                        set sphere_solvent, {kwargs['sphere_solvent']}
+                        set ambient,  {kwargs['ambient']}
+                        set_color basic, {self.color_1}
+                        set_color ligg, {self.color_2}
+                        color basic, org
+                        color ligg, lig
                         unset depth_cue
                         ray 256, 256
                         """
@@ -304,6 +373,16 @@ class PymolTexture:
                         set stick_fixed_radius, {kwargs['stick_fixed_radius']}
                         set stick_nub, {kwargs['stick_nub']}
                         set stick_transparency, {kwargs['stick_transparency']}
+                        set stick_overlap,{kwargs['stick_overlap']}
+                        set stick_ball, {kwargs['stick_ball']}
+                        srt stick_color,  {kwargs['stick_color']}
+                        set stick_quality,  {kwargs['stick_quality']}
+                        set stick_ball_ratio,{kwargs['stick_ball_ratio']}
+                        set stick_valence_scale, {kwargs['stick_valence_scale']}
+                        set_color basic, {self.color_1}
+                        set_color ligg, {self.color_2}
+                        color basic, org
+                        color ligg, lig
                         ray 256, 256
                         """
                 )
@@ -319,6 +398,10 @@ class PymolTexture:
                         set line_radius, {kwargs['line_radius']}
                         set line_smooth, {kwargs['line_smooth']}
                         set line_width, {kwargs['line_width']}
+                        set_color basic, {self.color_1}
+                        set_color ligg, {self.color_2}
+                        color basic, org
+                        color ligg, lig
                         ray 256, 256
                         """
                 )
@@ -337,14 +420,34 @@ class PymolTexture:
                         set ribbon_trace_atoms, {kwargs['ribbon_trace_atoms']}
                         set ribbon_width,  {kwargs['ribbon_width']}
                         set trace_atoms_mode,  {kwargs['trace_atoms_mode']}
+                        set_color basic, {self.color_1}
+                        set_color ligg, {self.color_2}
+                        color basic, org
+                        color ligg, lig
                         ray 256, 256
                         """
                 )
 
             elif self.repres == "cartoon":
                 cmd.do(
+                    """
+                        as cartoon"""
+                )
+                if self.cartoon_geis_mode:
+                    cmd.do(
+                        f"""cartoon tube
+                        show surface
+                        set_color basic, {self.color_1}
+                        set surface_color, basic
+                        set surface_mode,  {kwargs['surface_mode']}
+                        set transperency_mode,  {kwargs['surface_mode']}
+                        set transparency,  {kwargs['transparency']}
+                        set ray_transparency_oblique,  {kwargs['ray_transparency_oblique']}
+                        set ray_transparency_oblique_power,  {kwargs['ray_transparency_oblique_power']}
+                    """
+                    )
+                cmd.do(
                     f"""
-                        as cartoon
                         set cartoon_cylindrical_helices,  {kwargs['cartoon_cylindrical_helices']}
                         set cartoon_debug, {kwargs['cartoon_debug']}
                         set cartoon_dumbbell_length, {kwargs['cartoon_dumbbell_length']}
@@ -360,6 +463,10 @@ class PymolTexture:
                         set cartoon_smooth_cycles, {kwargs['cartoon_smooth_cycles']}
                         set cartoon_transparency, {kwargs['cartoon_transparency']}
                         set cartoon_tube_cap, {kwargs['cartoon_tube_cap']}
+                        set_color basic, {self.color_1}
+                        set_color bg, {self.color_2}
+                        color basic
+                        bg_color, bg
                         ray 256, 256
                         """
                 )
@@ -374,10 +481,13 @@ class PymolTexture:
                         set dot_radius, {kwargs['dot_radius']}
                         set dot_solvent, {kwargs['dot_solvent']}
                         set trim_dots, {kwargs['trim_dots']}
+                        set_color basic, {self.color_1}
+                        set_color ligg, {self.color_2}
+                        color basic, org
+                        color ligg, lig
                         ray 256, 256
                         """
                 )
-            # render_image('styled')
             cmd.png("styled.png")
             time.sleep(1)
             if self.method == "neural":
@@ -405,7 +515,10 @@ class PymolTexture:
                 ssim = compare_ssim(Image.fromarray(style), Image.fromarray(resized))
                 losses.append(ssim)
                 parms.append(kwargs)
-        return parms[np.argmin(losses)]
+        result = parms[np.argmin(losses)]
+        result["color_1"] = self.color_1
+        result["color_2"] = self.color_2
+        return result
 
 
 if __name__ == "__main__":
@@ -416,20 +529,14 @@ if __name__ == "__main__":
     parser.add_argument("--representation", dest="representation", type=str)
     parser.add_argument("--style_image_path", dest="style_image_path", type=str)
     parser.add_argument("--view", dest="view", type=str)
+    parser.add_argument("--cartoon_geis_mode", dest="cartoon_geis_mode", type=bool)
+    parser.add_argument("--params_txt", dest="params_txt", type=str)
 
     args = parser.parse_args()
     if args.solver == "optimizer":
-        params = PARAMS = {
-            "dynamic_width": 1,
-            "dynamic_width_max": 5,
-            "dynamic_width_min": 2.5,
-            "dynamic_width_factor": 0.4,
-            "line_radius": 1,
-            "line_smooth": 1,
-            "line_width": 2,
-            "ray_trace_gain": [5],
-            "ray_trace_mode": [1],
-        }
+        file = open(args.params_txt, "r")
+        cont = file.read()
+        params = ast.literal_eval(cont)
     elif args.solver == "solver":
         if args.representation == "dots":
             params = merge_two_dicts(DOTS_TEXT_PARAMS, COMMON_PARAMS)
@@ -443,17 +550,29 @@ if __name__ == "__main__":
             params = merge_two_dicts(RIBBONS_TEXT_PARAMS, COMMON_PARAMS)
         elif args.representation == "cartoon":
             params = merge_two_dicts(CARTOON_TEXT_PARAMS, COMMON_PARAMS)
+
+    # extract 2 main colors from the style image
+    style = cv2.imread(args.style_image_path)
+    style_image = cv2.cvtColor(style, cv2.COLOR_BGR2RGB)
+    modified_image = prep_image(style_image)
+    hex = color_analysis(modified_image)
+    color_1 = ImageColor.getcolor(hex[0], "RGB")
+    color_2 = ImageColor.getcolor(hex[1], "RGB")
+
     if args.compare_method == "neural":
         style = image_loader(args.style_image_path)
         model = PymolTexture(
             solver=args.solver,
             compare_method="neural",
             style=style,
+            cartoon_geis_mode=False,
             protein=args.protein,
             repres=args.representation,
             params=params,
             model=VGG().to(DEVICE).eval(),
-            view = args.view
+            color_1=color_1,
+            color_2=color_2,
+            view=args.view,
         )
     elif args.compare_method == "ssim":
         style = cv2.imread(args.style_image_path)
@@ -461,12 +580,15 @@ if __name__ == "__main__":
             solver=args.solver,
             compare_method="ssim",
             style=style,
+            cartoon_geis_mode=False,
             protein=args.protein,
             repres=args.representation,
             params=params,
             model=VGG().to(DEVICE).eval(),
-            view = args.view
+            color_1=color_1,
+            color_2=color_2,
+            view=args.view,
         )
     k = model.run()
-    with open('texture_solver_params.txt', 'w') as f:
-        print(k, file=f)
+    with open("texture_solver_params.txt", "w") as f:
+        file.write(json.dumps(k))
